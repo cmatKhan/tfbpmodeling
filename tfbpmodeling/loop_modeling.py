@@ -1,6 +1,5 @@
 import logging
 import os
-from itertools import islice
 
 import numpy as np
 import pandas as pd
@@ -35,7 +34,6 @@ def bootstrap_stratified_cv_loop(
     ci_percentile: float = 98.0,  # Final confidence interval
     use_sample_weight_in_cv: bool = False,
     stabilization_ci_start: float = 50.0,  # Starting CI for stabilization
-    num_samples_for_stabilization: int = 500,
     output_dir: str = "",
     **kwargs,
 ) -> BootstrapModelResults:
@@ -71,8 +69,8 @@ def bootstrap_stratified_cv_loop(
         bootstrap_coefs = []
         alpha_list = []
 
-        for index, (y_resampled, x_resampled, sample_weight) in islice(
-            enumerate(bootstrapped_data), num_samples_for_stabilization
+        for index, (y_resampled, x_resampled, sample_weight) in enumerate(
+            bootstrapped_data
         ):
             logger.debug(f"Bootstrap iteration index: {index}")
         # Set the random state for StratifiedKFold to the current index
