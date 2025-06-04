@@ -73,56 +73,58 @@ def bootstrap_stratified_cv_loop(
             bootstrapped_data
         ):
             logger.debug(f"Bootstrap iteration index: {index}")
-        # Set the random state for StratifiedKFold to the current index
-        skf.random_state = i
+            # Set the random state for StratifiedKFold to the current index
+            skf.random_state = index
 
-        # the random_state for the estimator is used to choose among equally good
-        # variables. I'm not sure how much this affects results -- we are making
-        # a distribution of coefficients rather than letting sklearn choose a
-        # model for us -- but it is, similar to StratifiedKFold above, randomized
-        # but reproducible by setting random_state to the bootstrap iteration
-        try:
-            estimator.random_state = i
-        except AttributeError:
-            logger.warning("Estimator does not have a random_state attribute.")
-            pass
-        # by default, use the sample weights rather than the resampled data directly
-        if kwargs.get("use_sample_weight_in_cv", True):
-            # this should be over the entire data set, since we are using the weights
-            # to perform the sampling
-            logger.info("Performing CV by sample weights")
-            classes = stratification_classification(
-                perturbed_tf_series.loc[bootstrapped_data.response_df.index].squeeze(),
-                bootstrapped_data.response_df.squeeze(),
-                bin_by_binding_only=kwargs.get("bin_by_binding_only", False),
-                bins=kwargs.get("bins", None),
-            )
+            # the random_state for the estimator is used to choose among equally good
+            # variables. I'm not sure how much this affects results -- we are making
+            # a distribution of coefficients rather than letting sklearn choose a
+            # model for us -- but it is, similar to StratifiedKFold above, randomized
+            # but reproducible by setting random_state to the bootstrap iteration
+            try:
+                estimator.random_state = index
+            except AttributeError:
+                logger.warning("Estimator does not have a random_state attribute.")
+                pass
+            # by default, use the sample weights rather than the resampled data directly
+            if kwargs.get("use_sample_weight_in_cv", True):
+                # this should be over the entire data set, since we are
+                # using the weights to perform the sampling
+                logger.info("Performing CV by sample weights")
+                classes = stratification_classification(
+                    perturbed_tf_series.loc[
+                        bootstrapped_data.response_df.index
+                    ].squeeze(),
+                    bootstrapped_data.response_df.squeeze(),
+                    bin_by_binding_only=kwargs.get("bin_by_binding_only", False),
+                    bins=kwargs.get("bins", None),
+                )
 
-            model_i = stratified_cv_modeling(
-                bootstrapped_data.response_df,
-                bootstrapped_data.model_df,
-                classes=classes,
-                estimator=estimator,
-                skf=skf,
-                sample_weight=sample_weight,
-            )
-        else:
-            # this is performed on the resampled data
-            logger.info("Performing CV by index partitioning")
-            classes = stratification_classification(
-                perturbed_tf_series.loc[y_resampled.index].squeeze(),
-                y_resampled.squeeze(),
-                bin_by_binding_only=kwargs.get("bin_by_binding_only", False),
-                bins=kwargs.get("bins", None),
-            )
+                model_i = stratified_cv_modeling(
+                    bootstrapped_data.response_df,
+                    bootstrapped_data.model_df,
+                    classes=classes,
+                    estimator=estimator,
+                    skf=skf,
+                    sample_weight=sample_weight,
+                )
+            else:
+                # this is performed on the resampled data
+                logger.info("Performing CV by index partitioning")
+                classes = stratification_classification(
+                    perturbed_tf_series.loc[y_resampled.index].squeeze(),
+                    y_resampled.squeeze(),
+                    bin_by_binding_only=kwargs.get("bin_by_binding_only", False),
+                    bins=kwargs.get("bins", None),
+                )
 
-            model_i = stratified_cv_modeling(
-                y_resampled,
-                x_resampled,
-                classes=classes,
-                estimator=estimator,
-                skf=skf,
-            )
+                model_i = stratified_cv_modeling(
+                    y_resampled,
+                    x_resampled,
+                    classes=classes,
+                    estimator=estimator,
+                    skf=skf,
+                )
 
             alpha_list.append(model_i.alpha_)
             bootstrap_coefs.append(model_i.coef_)
