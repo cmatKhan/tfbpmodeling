@@ -54,7 +54,12 @@ def bootstrap_stratified_cv_loop(
     current_ci = stabilization_ci_start
     previous_num_variables = None
     stabilized_variables = None
-
+    # shuffle = True means that the partitioning is random.
+    # NOTE: In each iteration, the random state is updated to the current
+    # bootstrap iteration index. This ensures that the randomization is
+    # reproducible across different runs of the function, while still allowing
+    # for variability in how each bootstrap sample is partitioned into train/test
+    skf = StratifiedKFold(n_splits=4, shuffle=True, random_state=42)
     logger.info(f"Starting iterative variable dropping with CI={current_ci}")
     i = 0
     while True:
