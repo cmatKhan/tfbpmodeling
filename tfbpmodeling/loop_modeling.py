@@ -69,7 +69,19 @@ def bootstrap_stratified_cv_loop(
 
         for index, (y_resampled, x_resampled, sample_weight) in islice(enumerate(bootstrapped_data), num_samples_for_stabilization):
             logger.debug(f"Bootstrap iteration index: {index}")
-
+        # Set the random state for StratifiedKFold to the current index
+        skf.random_state = i
+         
+         # the random_state for the estimator is used to choose among equally good
+        # variables. I'm not sure how much this affects results -- we are making
+        # a distribution of coefficients rather than letting sklearn choose a
+        # model for us -- but it is, similar to StratifiedKFold above, randomized
+        # but reproducible by setting random_state to the bootstrap iteration
+        try:
+            estimator.random_state = i
+        except AttributeError:
+            logger.warning("Estimator does not have a random_state attribute.")
+            pass
             classes = stratification_classification(
                 perturbed_tf_series.loc[y_resampled.index].squeeze(),
                 y_resampled.squeeze(),
