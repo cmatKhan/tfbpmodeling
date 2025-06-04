@@ -185,9 +185,8 @@ def main() -> None:
         "--stabilization_ci_start",
         type=float,
         default=50.0,
-        help="Starting confidence interval for iterative dropout stabilization (default: 50.0).",
+        help="Starting confidence interval for iterative dropout stabilization",
     )
-
 
     # Output arguments
     linear_output_group = linear_lasso_parser.add_argument_group("Output")

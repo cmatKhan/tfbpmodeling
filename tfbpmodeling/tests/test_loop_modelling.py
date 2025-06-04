@@ -1,11 +1,7 @@
-import json
-import os
-import tempfile
-from typing import Any
-
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn.linear_model import LassoCV
 
 from tfbpmodeling.lasso_modeling import (
     BootstrapModelResults,
@@ -13,7 +9,7 @@ from tfbpmodeling.lasso_modeling import (
     ModelingInputData,
 )
 from tfbpmodeling.loop_modeling import bootstrap_stratified_cv_loop
-from sklearn.linear_model import LassoCV, LinearRegression
+
 
 @pytest.fixture
 def sample_data():
@@ -130,6 +126,7 @@ def bootstrapped_random_sample_data(random_sample_data):
         n_bootstraps=100,
     )
 
+
 def test_bootstrap_stratified_cv_loop(
     random_sample_data,
     bootstrapped_random_sample_data,
@@ -139,15 +136,15 @@ def test_bootstrap_stratified_cv_loop(
     perturbed_tf_series = random_sample_data.predictors_df[
         random_sample_data.perturbed_tf
     ]
-    estimator = LassoCV()   
+    estimator = LassoCV()
     results = bootstrap_stratified_cv_loop(
         bootstrapped_data=bootstrapped_random_sample_data,
         perturbed_tf_series=perturbed_tf_series,
         estimator=estimator,
         ci_percentile=20.0,
-        stabilization_ci_start = 10.0, 
+        stabilization_ci_start=10.0,
         num_samples_for_stabilization=10,
-        output_dir=str(tmp_path)
+        output_dir=str(tmp_path),
     )
 
     # Check result object

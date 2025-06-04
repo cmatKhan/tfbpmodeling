@@ -1,23 +1,26 @@
+import logging
+import os
+from itertools import islice
+
 import numpy as np
 import pandas as pd
+from sklearn.base import BaseEstimator
 from sklearn.linear_model import LassoCV
-from sklearn.base import BaseEstimator, clone
 from sklearn.model_selection import StratifiedKFold
-from scipy.stats import rankdata
-import logging
-from itertools import islice
-import os
 
 # Import necessary classes and functions
 from tfbpmodeling.lasso_modeling import (
-    BootstrappedModelingInputData,
-    stratification_classification,
-    stratified_cv_modeling,
     BootstrapModelResults,
-    bootstrap_stratified_cv_modeling
+    BootstrappedModelingInputData,
+    bootstrap_stratified_cv_modeling,
+    stratified_cv_modeling,
+)
+from tfbpmodeling.stratification_classification import (
+    stratification_classification,
 )
 
 logger = logging.getLogger(__name__)
+
 
 def bootstrap_stratified_cv_loop(
     bootstrapped_data: BootstrappedModelingInputData,
@@ -37,19 +40,20 @@ def bootstrap_stratified_cv_loop(
     **kwargs,
 ) -> BootstrapModelResults:
     """
-    Perform bootstrapped stratified CV modeling with iterative variable dropping
-    based on confidence intervals, and return results at the final confidence interval.
+    Perform bootstrapped stratified CV modeling with iterative variable dropping based
+    on confidence intervals, and return results at the final confidence interval.
 
     :param bootstrapped_data: Bootstrapped samples of predictors and response data.
     :param perturbed_tf_series: Series of TF binding values for stratification.
     :param estimator: scikit-learn estimator. Default is LassoCV.
     :param ci_percentile: Final confidence interval for results (e.g., 99.0).
     :param use_sample_weight_in_cv: Whether to use sample weights in CV.
-    :param stabilization_ci_start: Starting confidence interval for stabilization (e.g., 50.0).
+    :param stabilization_ci_start: Starting confidence interval for stabilization (e.g.,
+        50.0).
     :param stabilization_ci_step: Step size for increasing CI during stabilization.
     :param kwargs: Additional arguments for stratification or modeling.
-
     :return: A BootstrapModelResults object containing aggregated results.
+
     """
     current_ci = stabilization_ci_start
     previous_num_variables = None
@@ -67,12 +71,14 @@ def bootstrap_stratified_cv_loop(
         bootstrap_coefs = []
         alpha_list = []
 
-        for index, (y_resampled, x_resampled, sample_weight) in islice(enumerate(bootstrapped_data), num_samples_for_stabilization):
+        for index, (y_resampled, x_resampled, sample_weight) in islice(
+            enumerate(bootstrapped_data), num_samples_for_stabilization
+        ):
             logger.debug(f"Bootstrap iteration index: {index}")
         # Set the random state for StratifiedKFold to the current index
         skf.random_state = i
-         
-         # the random_state for the estimator is used to choose among equally good
+
+        # the random_state for the estimator is used to choose among equally good
         # variables. I'm not sure how much this affects results -- we are making
         # a distribution of coefficients rather than letting sklearn choose a
         # model for us -- but it is, similar to StratifiedKFold above, randomized
@@ -90,8 +96,8 @@ def bootstrap_stratified_cv_loop(
             classes = stratification_classification(
                 perturbed_tf_series.loc[bootstrapped_data.response_df.index].squeeze(),
                 bootstrapped_data.response_df.squeeze(),
-                bin_by_binding_only=bin_by_binding_only,
-                bins=bins,
+                bin_by_binding_only=kwargs.get("bin_by_binding_only", False),
+                bins=kwargs.get("bins", None),
             )
 
             model_i = stratified_cv_modeling(
@@ -108,8 +114,8 @@ def bootstrap_stratified_cv_loop(
             classes = stratification_classification(
                 perturbed_tf_series.loc[y_resampled.index].squeeze(),
                 y_resampled.squeeze(),
-                bin_by_binding_only=bin_by_binding_only,
-                bins=bins,
+                bin_by_binding_only=kwargs.get("bin_by_binding_only", False),
+                bins=kwargs.get("bins", None),
             )
 
             model_i = stratified_cv_modeling(
@@ -124,13 +130,17 @@ def bootstrap_stratified_cv_loop(
             bootstrap_coefs.append(model_i.coef_)
 
         # Aggregate coefficients
-        bootstrap_coefs_df = pd.DataFrame(bootstrap_coefs, columns=bootstrapped_data.model_df.columns)
+        bootstrap_coefs_df = pd.DataFrame(
+            bootstrap_coefs, columns=bootstrapped_data.model_df.columns
+        )
 
         # Compute confidence intervals
         ci_dict = {
             colname: (
                 np.percentile(bootstrap_coefs_df[colname], (100 - current_ci) / 2),
-                np.percentile(bootstrap_coefs_df[colname], 100 - (100 - current_ci) / 2),
+                np.percentile(
+                    bootstrap_coefs_df[colname], 100 - (100 - current_ci) / 2
+                ),
             )
             for colname in bootstrap_coefs_df.columns
         }
@@ -147,11 +157,16 @@ def bootstrap_stratified_cv_loop(
         with open(output_path, "w") as f:
             for var in selected_variables:
                 f.write(f"{var}\n")
-                
+
         # Check for stabilization
-        if previous_num_variables is not None and len(selected_variables) == previous_num_variables:
+        if (
+            previous_num_variables is not None
+            and len(selected_variables) == previous_num_variables
+        ):
             stabilized_variables = selected_variables
-            logger.info(f"Stabilization achieved with {len(stabilized_variables)} variables")
+            logger.info(
+                f"Stabilization achieved with {len(stabilized_variables)} variables"
+            )
             break
 
         previous_num_variables = len(selected_variables)
@@ -171,4 +186,4 @@ def bootstrap_stratified_cv_loop(
         **kwargs,
     )
 
-    return final_results          
+    return final_results
