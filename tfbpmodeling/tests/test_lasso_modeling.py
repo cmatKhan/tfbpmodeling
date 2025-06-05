@@ -196,14 +196,16 @@ def test_from_files(monkeypatch, tmp_path):
     assert instance.predictors_df.shape[0] == 2
 
 
-def test_initialization(sample_data):
+def test_initialization_random_state_none(sample_data):
     """Ensure proper initialization with valid inputs."""
     response_df, predictors_df = sample_data
     input_data = ModelingInputData(response_df, predictors_df, perturbed_tf="TF1")
     model_df = input_data.get_modeling_data(formula="TF1 + TF1:TF2 + TF1:TF3 - 1")
 
     boot_data = BootstrappedModelingInputData(
-        input_data.response_df, model_df, n_bootstraps=5
+        input_data.response_df,
+        model_df,
+        n_bootstraps=5,
     )
 
     assert isinstance(boot_data.response_df, pd.DataFrame)
@@ -212,16 +214,60 @@ def test_initialization(sample_data):
     assert boot_data.response_df.index.equals(boot_data.model_df.index)
 
 
+def test_initialization_random_state(sample_data):
+    """Ensure proper initialization with valid inputs."""
+    response_df, predictors_df = sample_data
+    input_data = ModelingInputData(response_df, predictors_df, perturbed_tf="TF1")
+    model_df = input_data.get_modeling_data(formula="TF1 + TF1:TF2 + TF1:TF3 - 1")
+
+    data1 = BootstrappedModelingInputData(
+        input_data.response_df, model_df, n_bootstraps=5, random_state=42
+    )
+
+    data2 = BootstrappedModelingInputData(
+        input_data.response_df, model_df, n_bootstraps=5, random_state=42
+    )
+
+    # data1 and data2 should have the same bootstrap indicies
+    assert all(
+        np.array_equal(i1, i2)
+        for i1, i2 in zip(data1.bootstrap_indices, data2.bootstrap_indices)
+    )
+
+    # data3 should have different bootstrap indices because of different random_state
+    data3 = BootstrappedModelingInputData(
+        input_data.response_df, model_df, n_bootstraps=5, random_state=100
+    )
+
+    assert not all(
+        np.array_equal(i1, i2)
+        for i1, i2 in zip(data3.bootstrap_indices, data2.bootstrap_indices)
+    )
+
+
 def test_invalid_inputs():
     """Ensure errors are raised for invalid inputs."""
+
+    # Require that response_df and model_df are DataFrames
     with pytest.raises(TypeError):
         BootstrappedModelingInputData("not a df", pd.DataFrame(), 5)
 
     with pytest.raises(TypeError):
-        BootstrappedModelingInputData(pd.DataFrame(), "not a df", 5)
+        BootstrappedModelingInputData(
+            pd.DataFrame(index=["a", "b", "c"]), "not a df", 5
+        )
 
-    with pytest.raises(ValueError):
-        BootstrappedModelingInputData(pd.DataFrame(), pd.DataFrame(), -1)
+    # require that the response_df and model_df have the same index in the same order
+    with pytest.raises(IndexError):
+        BootstrappedModelingInputData(
+            pd.DataFrame(index=["a", "b", "c"]), pd.DataFrame(index=["a", "c", "b"]), 5
+        )
+
+    # require that n_bootstraps is a positive integer
+    with pytest.raises(TypeError):
+        BootstrappedModelingInputData(
+            pd.DataFrame(index=["a", "b", "c"]), pd.DataFrame(index=["a", "b", "c"]), -1
+        )
 
 
 def test_bootstrap_sample_shape(bootstrapped_sample_data):
@@ -420,54 +466,6 @@ def test_bootstrapinputmodeldata_serialize_deserialize(
         np.testing.assert_array_equal(
             model_data.sample_weights[key], loaded_data.sample_weights[key]
         )
-
-
-def test_load_bootstrap_indicies(bootstrapped_random_sample_data, tmp_path):
-    """Tests loading of bootstrap indices from a JSON file."""
-    # Create a temporary file for the bootstrap indices
-    json_file = tmp_path / "bootstrap_indices.json"
-
-    # Save the bootstrap indices to the JSON file
-    bootstrapped_random_sample_data.save_indices(json_file)
-
-    # Load the bootstrap indices from the JSON file
-    loaded_indices = BootstrappedModelingInputData.load_indices(json_file)
-
-    # Check that the loaded indices match the original
-    assert len(bootstrapped_random_sample_data.bootstrap_indices) == len(loaded_indices)
-    for orig, loaded in zip(
-        bootstrapped_random_sample_data.bootstrap_indices, loaded_indices
-    ):
-        np.testing.assert_array_equal(orig, loaded)
-
-    response_df = bootstrapped_random_sample_data.response_df
-    model_df = bootstrapped_random_sample_data.model_df
-
-    with pytest.raises(ValueError):
-        BootstrappedModelingInputData(
-            response_df=response_df,
-            model_df=model_df,
-            n_bootstraps=len(loaded_indices),
-            bootstrap_indices=loaded_indices,
-        )
-
-    new_bootstrap_obj = BootstrappedModelingInputData(
-        response_df=response_df,
-        model_df=model_df,
-        bootstrap_indices=loaded_indices,
-    )
-
-    # Ensure the new object has the same sample_weights as the original
-    assert len(bootstrapped_random_sample_data.sample_weights) == len(
-        new_bootstrap_obj.sample_weights
-    )
-    assert all(
-        np.array_equal(
-            bootstrapped_random_sample_data.sample_weights[i],
-            new_bootstrap_obj.sample_weights[i],
-        )
-        for i in range(len(bootstrapped_random_sample_data.sample_weights))
-    )
 
 
 # 2. Testing `stratified_cv_r2()`

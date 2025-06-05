@@ -14,7 +14,7 @@ from scipy.stats import rankdata
 from sklearn.base import BaseEstimator, clone
 from sklearn.linear_model import LassoCV, LinearRegression
 from sklearn.model_selection import StratifiedKFold
-from sklearn.utils import resample
+from sklearn.utils import check_random_state, resample
 
 from tfbpmodeling.stratification_classification import (
     stratification_classification,
@@ -501,9 +501,9 @@ class BootstrappedModelingInputData:
         self,
         response_df: pd.DataFrame,
         model_df: pd.DataFrame,
-        n_bootstraps: int | None = None,
-        bootstrap_indices: list[np.ndarray] | None = None,
+        n_bootstraps: int,
         normalize_sample_weights: bool = True,
+        random_state: int | None = None,
     ) -> None:
         """
         Initialize bootstrapped modeling input.
@@ -513,54 +513,125 @@ class BootstrappedModelingInputData:
         :param response_df: Response variable.
         :param model_df: Predictor matrix.
         :param n_bootstraps: Number of bootstrap replicates to generate.
-        :param bootstrap_indices: Precomputed bootstrap sample indices.
+        :param random_state: Random state for reproducibility. Can be an integer or a
+            numpy RandomState object, or None. If None (default), then a random
+            random state is chosen.
 
-        :raises ValueError: if the inputs are invalid.
+        :raises ValueError: if the response_df and model_df do not have the same index
+            or if arguments are not correct datatype.
 
         """
-        if not isinstance(response_df, pd.DataFrame):
-            raise TypeError("response_df must be a DataFrame.")
-        if not isinstance(model_df, pd.DataFrame):
-            raise TypeError("model_df must be a DataFrame.")
-        if not response_df.index.equals(model_df.index):
-            raise ValueError("response_df and model_df must have the same index order.")
-        if n_bootstraps and bootstrap_indices:
-            raise ValueError(
-                "Either `n_bootstraps` or `bootstrap_indices` "
-                "must be provided, not both."
-            )
 
         self.response_df: pd.DataFrame = response_df
         self.model_df: pd.DataFrame = model_df
+        if not response_df.index.equals(model_df.index):
+            raise IndexError("response_df and model_df must have the same index order.")
         self.normalize_sample_weights = normalize_sample_weights
 
         # If bootstrap_indices is provided, set n_bootstraps based on its length
-        if bootstrap_indices is not None:
-            if not isinstance(bootstrap_indices, list) or not all(
-                isinstance(indices, np.ndarray) for indices in bootstrap_indices
-            ):
-                raise ValueError("bootstrap_indices must be a list of numpy arrays.")
-            if len(bootstrap_indices) == 0:
-                raise ValueError("bootstrap_indices must not be empty.")
-            self.n_bootstraps: int = len(bootstrap_indices)
-        else:
-            if n_bootstraps is None:
-                raise ValueError(
-                    "Either `n_bootstraps` or `bootstrap_indices` must be provided."
-                )
-            if not isinstance(n_bootstraps, int) or n_bootstraps <= 0:
-                raise ValueError("n_bootstraps must be a positive integer.")
-            self.n_bootstraps = n_bootstraps
+        self.n_bootstraps = n_bootstraps
+
+        # set the random number generator attribute
+        self.random_state = random_state
+        self._rng = check_random_state(self.random_state)
 
         # Initialize attributes
         self._bootstrap_indices: list[np.ndarray] = []
         self._sample_weights: dict[int, np.ndarray] = {}
 
-        # Validate or generate bootstrap indices
-        if bootstrap_indices is not None:
-            self.bootstrap_indices = bootstrap_indices
-        else:
-            self._generate_bootstrap_indices()
+        self._generate_bootstrap_indices()
+
+    @property
+    def response_df(self) -> pd.DataFrame:
+        """
+        Get the response DataFrame.
+
+        :return: The response DataFrame.
+
+        """
+        return self._response_df
+
+    @response_df.setter
+    def response_df(self, value: pd.DataFrame) -> None:
+        """
+        Set the response DataFrame and validate it.
+
+        :param value: The response DataFrame to set.
+        :raises TypeError: if the input is not a dataframe
+        :raises IndexError: if the input dataframe has an empty index.
+
+        """
+        if not isinstance(value, pd.DataFrame):
+            raise TypeError("response_df must be a DataFrame.")
+        if value.index.empty:
+            raise IndexError("response_df must have a non-empty index.")
+        self._response_df = value
+
+    @property
+    def model_df(self) -> pd.DataFrame:
+        """
+        Get the model DataFrame.
+
+        :return: The model DataFrame.
+
+        """
+        return self._model_df
+
+    @model_df.setter
+    def model_df(self, value: pd.DataFrame) -> None:
+        """
+        Set the model DataFrame and validate it.
+
+        :param value: The model DataFrame to set.
+        :raises TypeError: if the input is not a dataframe
+        :raises IndexError: if the input dataframe has an empty index.
+
+        """
+        if not isinstance(value, pd.DataFrame):
+            raise TypeError("model_df must be a DataFrame.")
+        if value.index.empty:
+            raise IndexError("model_df must have a non-empty index.")
+        self._model_df = value
+
+    @property
+    def random_state(self) -> int | None:
+        """
+        An integer used to set the random state when generating the bootstrap samples.
+
+        Set this explicitly for reproducibility
+
+        """
+        return self._random_state
+
+    @random_state.setter
+    def random_state(self, value: int | None) -> None:
+        if not isinstance(value, (int, type(None))):
+            raise TypeError("random state must be an integer or None")
+        self._random_state = value
+
+    @property
+    def n_bootstraps(self) -> int:
+        """
+        Get the number of bootstrap samples.
+
+        :return: The number of bootstrap samples.
+
+        """
+        return self._n_bootstraps
+
+    @n_bootstraps.setter
+    def n_bootstraps(self, value: int) -> None:
+        """
+        Set the number of bootstrap samples.
+
+        :param value: The number of bootstrap samples to generate.
+        :raises TypeError: If the value is not a positive integer.
+
+        """
+        if not isinstance(value, int) or value <= 0:
+            raise TypeError("n_bootstraps must be a positive integer.")
+        logger.info(f"Number of bootstrap samples set to: {value}")
+        self._n_bootstraps = value
 
     @property
     def bootstrap_indices(self) -> list[np.ndarray]:
@@ -580,12 +651,12 @@ class BootstrappedModelingInputData:
         if not isinstance(value, list) or not all(
             isinstance(indices, np.ndarray) for indices in value
         ):
-            raise ValueError("bootstrap_indices must be a list of numpy arrays.")
+            raise TypeError("bootstrap_indices must be a list of numpy arrays.")
 
         valid_indices = set(self.response_df.index)
         for i, indices in enumerate(value):
             if not set(indices).issubset(valid_indices):
-                raise ValueError(
+                raise IndexError(
                     f"Bootstrap sample {i} contains invalid "
                     "indices not found in response_df."
                 )
@@ -609,11 +680,11 @@ class BootstrappedModelingInputData:
         Set the normalization status for sample weights.
 
         :param value: Boolean indicating whether to normalize sample weights.
-        :raises ValueError: If the input is not a boolean.
+        :raises TypeError: If the input is not a boolean.
 
         """
         if not isinstance(value, bool):
-            raise ValueError("normalize_sample_weights must be a boolean.")
+            raise TypeError("normalize_sample_weights must be a boolean.")
         logger.info(f"Sample weights normalization set to: {value}")
         self._normalize_sample_weights = value
 
@@ -633,13 +704,13 @@ class BootstrappedModelingInputData:
         Set the sample weights directly.
 
         :param value: Dictionary mapping index to numpy arrays of weights.
-        :raises ValueError: If the input is not a dictionary of int to ndarray.
+        :raises TypeError: If the input is not a dictionary of int to ndarray.
 
         """
         if not isinstance(value, dict) or not all(
             isinstance(k, int) and isinstance(v, np.ndarray) for k, v in value.items()
         ):
-            raise ValueError("sample_weights must be a dictionary of numpy arrays.")
+            raise TypeError("sample_weights must be a dictionary of numpy arrays.")
         self._sample_weights = value
 
     def _generate_bootstrap_indices(self) -> None:
@@ -647,7 +718,8 @@ class BootstrappedModelingInputData:
         y_indices: np.ndarray = self.response_df.index.to_numpy()
 
         self._bootstrap_indices = [
-            resample(y_indices, replace=True) for _ in range(self.n_bootstraps)
+            resample(y_indices, replace=True, random_state=self._rng)
+            for _ in range(self.n_bootstraps)
         ]
         self._compute_sample_weights()
 
@@ -747,24 +819,6 @@ class BootstrappedModelingInputData:
         with open(filename, "w") as f:
             json.dump(data, f)
 
-    @classmethod
-    def load_indices(cls, filename: str) -> list[np.ndarray]:
-        """
-        Loads bootstrap indices from a JSON file.
-
-        :param filename: Path to the JSON file containing bootstrap indices. This likely
-            was created by `save_indices()` method.
-        :return: A list of numpy arrays representing the bootstrap indices.
-        :raises FileNotFoundError: If the file does not exist.
-
-        """
-        if not os.path.exists(filename):
-            raise FileNotFoundError(f"File '{filename}' does not exist.")
-        with open(filename) as f:
-            data = json.load(f)
-
-        return [np.array(indices) for indices in data["bootstrap_indices"]]
-
     def serialize(self, filename: str) -> None:
         """
         Saves the object as a JSON file.
@@ -783,10 +837,8 @@ class BootstrappedModelingInputData:
             "index_name": self.response_df.index.name,
             "model_df": self.model_df.to_dict(orient="split"),
             "n_bootstraps": self.n_bootstraps,
-            "bootstrap_indices": [
-                indices.tolist() for indices in self._bootstrap_indices
-            ],
-            "sample_weights": {k: v.tolist() for k, v in self._sample_weights.items()},
+            "normalize_sample_weights": self.normalize_sample_weights,
+            "random_state": self.random_state,
         }
 
         with open(filename, "w") as f:
@@ -811,15 +863,17 @@ class BootstrappedModelingInputData:
         )
         n_bootstraps = data["n_bootstraps"]
 
-        instance = cls(response_df, model_df, n_bootstraps)
+        normalize_sample_weights = data["normalize_sample_weights"]
 
-        # Restore bootstrap indices and sample weights
-        instance._bootstrap_indices = [
-            np.array(indices) for indices in data["bootstrap_indices"]
-        ]
-        instance._sample_weights = {
-            int(k): np.array(v) for k, v in data["sample_weights"].items()
-        }
+        random_state = data["random_state"]
+
+        instance = cls(
+            response_df,
+            model_df,
+            n_bootstraps,
+            normalize_sample_weights=normalize_sample_weights,
+            random_state=random_state,
+        )
 
         return instance
 

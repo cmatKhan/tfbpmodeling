@@ -39,7 +39,7 @@ def bootstrapped_sample_data(sample_data):
     model_df = input_data.get_modeling_data(formula="TF1 + TF1:TF2 + TF1:TF3 - 1")
 
     return BootstrappedModelingInputData(
-        input_data.response_df, model_df, n_bootstraps=5
+        input_data.response_df, model_df, n_bootstraps=5, random_state=42
     )
 
 
@@ -123,6 +123,7 @@ def bootstrapped_random_sample_data(random_sample_data):
         random_sample_data.response_df,
         random_sample_data.get_modeling_data(formula=formula),
         n_bootstraps=100,
+        random_state=42,
     )
 
 
