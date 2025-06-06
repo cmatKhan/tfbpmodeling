@@ -182,7 +182,6 @@ def linear_perturbation_binding_modeling(args):
             estimator=estimator,
             ci_percentile=float(args.all_data_ci_level),
             stabilization_ci_start=args.stabilization_ci_start,
-            use_sample_weight_in_cv=args.use_weights_in_cv,
             bin_by_binding_only=args.bin_by_binding_only,
             bins=args.bins,
             output_dir=output_subdir,
@@ -193,7 +192,6 @@ def linear_perturbation_binding_modeling(args):
             bootstrapped_data=bootstrapped_data_all,
             perturbed_tf_series=input_data.predictors_df[input_data.perturbed_tf],
             estimator=estimator,
-            use_sample_weight_in_cv=args.use_weights_in_cv,
             ci_percentiles=[float(args.all_data_ci_level)],
             bin_by_binding_only=args.bin_by_binding_only,
             bins=args.bins,
@@ -264,7 +262,6 @@ def linear_perturbation_binding_modeling(args):
         bootstrapped_data_top_n,
         input_data.predictors_df[input_data.perturbed_tf],
         estimator=estimator,
-        use_sample_weight_in_cv=args.use_weights_in_cv,
         ci_percentiles=[float(args.topn_ci_level)],
     )
 
@@ -490,7 +487,7 @@ def sigmoid_bootstrap_worker(
         random_state=args.random_state,
     )
 
-    _, _, sample_weights = bootstrap_data.get_bootstrap_sample(i)
+    _, sample_weights = bootstrap_data.get_bootstrap_sample(i)
 
     classes = stratification_classification(
         input_data.predictors_df[input_data.perturbed_tf].squeeze(),
@@ -706,7 +703,9 @@ def common_modeling_binning_arguments(parser: argparse._ArgumentGroup) -> None:
     )
 
 
-def common_modeling_input_arguments(parser: argparse._ArgumentGroup) -> None:
+def common_modeling_input_arguments(
+    parser: argparse._ArgumentGroup, top_n_default: int | None = 600
+) -> None:
     """Add common input arguments for modeling commands."""
     parser.add_argument(
         "--response_file",
@@ -761,13 +760,22 @@ def common_modeling_input_arguments(parser: argparse._ArgumentGroup) -> None:
         help="Set this to an integer to make the bootstrap sampling reproducible. "
         "Default is None (no fixed seed) and each call will produce different "
         "bootstrap indices. Note that if this is set, the `top_n` random_state will "
-        "be +10 in order to make the top_n indicies different from the `all_data` step",
+        "be +10 in order to make the top_n indices different from the `all_data` step",
     )
     parser.add_argument(
         "--normalize_sample_weights",
         action="store_true",
         help=(
             "Set this to normalize the sample weights to sum to 1. " "Default is False."
+        ),
+    )
+    parser.add_argument(
+        "--top_n",
+        type=int,
+        default=top_n_default,
+        help=(
+            "Number of features to retain in the second round of modeling. "
+            f"Default is {top_n_default}"
         ),
     )
 
@@ -875,7 +883,7 @@ def main() -> None:
     # Input arguments
     linear_input_group = linear_lasso_parser.add_argument_group("Input")
 
-    common_modeling_input_arguments(linear_input_group)
+    common_modeling_input_arguments(linear_input_group, top_n_default=600)
 
     linear_model_feature_options_group = linear_lasso_parser.add_argument_group(
         "Feature Options"
@@ -889,16 +897,6 @@ def main() -> None:
     common_modeling_binning_arguments(linear_model_binning_group)
 
     linear_parameters_group = linear_lasso_parser.add_argument_group("Parameters")
-
-    linear_parameters_group.add_argument(
-        "--top_n",
-        type=int,
-        default=600,
-        help=(
-            "Number of features to retain in the second round of modeling. "
-            "Default is 600"
-        ),
-    )
 
     linear_parameters_group.add_argument(
         "--all_data_ci_level",
@@ -927,15 +925,6 @@ def main() -> None:
         help=(
             "This controls the maximum number of iterations LassoCV may "
             "use in order to fit"
-        ),
-    )
-
-    linear_parameters_group.add_argument(
-        "--use_weights_in_cv",
-        action="store_true",
-        help=(
-            "Enable sample weighting in cross-validation based on bootstrap "
-            "sample proportions."
         ),
     )
 
@@ -1001,7 +990,7 @@ def main() -> None:
 
     sigmoid_input_group = sigmoid_parser.add_argument_group("Input")
 
-    common_modeling_input_arguments(sigmoid_input_group)
+    common_modeling_input_arguments(sigmoid_input_group, top_n_default=None)
 
     sigmoid_input_group.add_argument(
         "--bootstrap_idx",
@@ -1015,16 +1004,6 @@ def main() -> None:
 
     sigmoid_parameters_group = sigmoid_parser.add_argument_group("Parameters")
 
-    sigmoid_parameters_group.add_argument(
-        "--top_n",
-        type=int,
-        default=None,
-        help=(
-            "This is the number of features to use for second round modeling. "
-            "Defaults to `Non`, for the 'all_data' model. Set to eg 600 for top_n "
-            "modeling"
-        ),
-    )
     sigmoid_parameters_group.add_argument(
         "--ci_level",
         type=float,

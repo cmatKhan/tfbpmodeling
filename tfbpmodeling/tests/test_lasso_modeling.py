@@ -228,7 +228,7 @@ def test_initialization_random_state(sample_data):
         input_data.response_df, model_df, n_bootstraps=5, random_state=42
     )
 
-    # data1 and data2 should have the same bootstrap indicies
+    # data1 and data2 should have the same bootstrap indices
     assert all(
         np.array_equal(i1, i2)
         for i1, i2 in zip(data1.bootstrap_indices, data2.bootstrap_indices)
@@ -272,11 +272,13 @@ def test_invalid_inputs():
 
 def test_bootstrap_sample_shape(bootstrapped_sample_data):
     """Ensure bootstrap samples maintain the correct shape."""
-    Y_resampled, X_resampled, _ = bootstrapped_sample_data.get_bootstrap_sample(0)
+    sample_indices, sample_weights = bootstrapped_sample_data.get_bootstrap_sample(0)
 
-    assert isinstance(Y_resampled, pd.DataFrame)
-    assert isinstance(X_resampled, pd.DataFrame)
-    assert Y_resampled.shape[0] == X_resampled.shape[0]  # Same number of rows
+    assert isinstance(sample_indices, np.ndarray)
+    assert isinstance(sample_weights, np.ndarray)
+    assert (
+        len(sample_indices) == bootstrapped_sample_data.response_df.shape[0]
+    )  # Same number of rows
 
 
 def test_bootstrap_deterministic(sample_data):
@@ -295,10 +297,10 @@ def test_bootstrap_deterministic(sample_data):
     )
 
     for i in range(5):
-        Y1, X1, _ = boot_data_1.get_bootstrap_sample(i)
-        Y2, X2, _ = boot_data_2.get_bootstrap_sample(i)
-        assert Y1.equals(Y2)
-        assert X1.equals(X2)
+        sample_indices1, sample_weights1 = boot_data_1.get_bootstrap_sample(i)
+        sample_indices2, sample_weights2 = boot_data_2.get_bootstrap_sample(i)
+        assert all(x == y for x, y in zip(sample_indices1, sample_indices2))
+        assert all(x == y for x, y in zip(sample_weights1, sample_weights2))
 
 
 def test_invalid_bootstrap_index(bootstrapped_sample_data):
@@ -335,10 +337,9 @@ def test_bootstrap_iteration(bootstrapped_sample_data):
     iterator = iter(bootstrapped_sample_data)
 
     for _ in range(bootstrapped_sample_data.n_bootstraps):
-        Y_resampled, X_resampled, weights = next(iterator)
-        assert isinstance(Y_resampled, pd.DataFrame)
-        assert isinstance(X_resampled, pd.DataFrame)
-        assert isinstance(weights, np.ndarray)
+        sample_indices, sample_weights = next(iterator)
+        assert isinstance(sample_indices, np.ndarray)
+        assert isinstance(sample_weights, np.ndarray)
 
     with pytest.raises(StopIteration):
         next(iterator)

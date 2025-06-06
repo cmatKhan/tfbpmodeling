@@ -374,7 +374,7 @@ class ModelingInputData:
         # Ensure response_df is ordered according to predictors_df
         response_df_ordered = response_df_filtered.loc[predictors_df_filtered.index]
 
-        # raise an error if the indicies of the response and predictors
+        # raise an error if the indices of the response and predictors
         # do not match after filtering
         if not response_df_ordered.index.equals(predictors_df_filtered.index):
             raise ValueError(
@@ -745,7 +745,7 @@ class BootstrappedModelingInputData:
             sample_counts = np.bincount(integer_indices, minlength=len(y_indices))
 
             if self.normalize_sample_weights:
-                # note sample_counts.sum() == len(y_indicies) in this case, but
+                # note sample_counts.sum() == len(y_indices) in this case, but
                 # sample_counts.sum() seems to be more canonical
                 sample_weights[i] = sample_counts / sample_counts.sum()
             else:
@@ -753,14 +753,12 @@ class BootstrappedModelingInputData:
 
         self._sample_weights = sample_weights
 
-    def get_bootstrap_sample(
-        self, i: int
-    ) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
+    def get_bootstrap_sample(self, i: int) -> tuple[np.ndarray, np.ndarray]:
         """
         Retrieves a bootstrap sample by index.
 
         :param i: Bootstrap sample index.
-        :return: Tuple of (Y_resampled, X_resampled, sample_weights).
+        :return: Tuple of (sample_indices, sample_weights).
         :raises IndexError: If the index exceeds the number of bootstraps.
 
         """
@@ -773,8 +771,7 @@ class BootstrappedModelingInputData:
         sample_weights = self.get_sample_weight(i)
 
         return (
-            self.response_df.loc[sampled_indices],
-            self.model_df.loc[sampled_indices],
+            sampled_indices,
             sample_weights,
         )
 
@@ -882,23 +879,21 @@ class BootstrappedModelingInputData:
         self._current_index = 0
         return self
 
-    def __next__(self) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
+    def __next__(self) -> tuple[np.ndarray, np.ndarray]:
         """
         Provides the next bootstrap sample for iteration.
 
-        :return: Tuple of (Y_resampled, X_resampled, sample_weights).
+        :return: Tuple of (sample_indices, sample_weights).
         :raises StopIteration: When all bootstrap samples are exhausted.
 
         """
         if self._current_index >= self.n_bootstraps:
             raise StopIteration
 
-        Y_resampled, X_resampled, sample_weights = self.get_bootstrap_sample(
-            self._current_index
-        )
+        sample_indices, sample_weights = self.get_bootstrap_sample(self._current_index)
 
         self._current_index += 1
-        return Y_resampled, X_resampled, sample_weights
+        return sample_indices, sample_weights
 
 
 class BootstrapModelResults:
@@ -1257,7 +1252,6 @@ def bootstrap_stratified_cv_modeling(
         n_jobs=4,
     ),
     ci_percentiles: list[int | float] = [95.0, 99.0],
-    use_sample_weight_in_cv: bool = False,
     **kwargs,
 ) -> BootstrapModelResults:
     """
@@ -1274,8 +1268,6 @@ def bootstrap_stratified_cv_modeling(
     :param estimator: scikit-learn estimator. Must support `.fit()` with `sample_weight`
         and allow setting `.cv`. Default is `LassoCV`.
     :param ci_percentiles: List of confidence intervals (e.g., [95.0, 99.0]).
-    :param use_sample_weight_in_cv: If True, weights from bootstrap resampling are used
-        in model fitting. Defaults to False.
     :params kwargs: Additional keyword arguments. The following are supported:
         - bin_by_binding_only: Default False. If False,
             stratification is based on both binding and perturbation ranks.
@@ -1308,10 +1300,6 @@ def bootstrap_stratified_cv_modeling(
         raise ValueError(
             "ci_percentiles must be a list of integers or floats between 0 and 100."
         )
-
-    if not isinstance(use_sample_weight_in_cv, bool):
-        raise ValueError("use_sample_weight_in_cv must be a boolean.")
-    logger.info(f"Using sample weights in CV: {use_sample_weight_in_cv}")
 
     # validate that the index of the response_df and model_df match
     if not bootstrapped_data.response_df.index.equals(bootstrapped_data.model_df.index):
@@ -1359,9 +1347,7 @@ def bootstrap_stratified_cv_modeling(
 
     # Bootstrap iterations
     logger.info("Starting bootstrap modeling iterations...")
-    for index, (y_resampled, x_resampled, sample_weight) in enumerate(
-        bootstrapped_data
-    ):
+    for index, (_, sample_weight) in enumerate(bootstrapped_data):
         logger.debug("Bootstrap iteration index: %d", index)
 
         # Set the random state for StratifiedKFold to the current index
@@ -1378,47 +1364,29 @@ def bootstrap_stratified_cv_modeling(
             logger.warning("Estimator does not have a random_state attribute.")
             pass
 
-        if use_sample_weight_in_cv:
-            # this should be over the entire data set, since we are using the weights
-            # to perform the sampling
-            logger.info("Performing CV by sample weights")
-            classes = stratification_classification(
-                perturbed_tf_series.loc[bootstrapped_data.response_df.index].squeeze(),
-                bootstrapped_data.response_df.squeeze(),
-                bin_by_binding_only=bin_by_binding_only,
-                bins=bins,
-            )
+        logger.info("Performing CV by sample weights")
+        classes = stratification_classification(
+            perturbed_tf_series.loc[bootstrapped_data.response_df.index].squeeze(),
+            bootstrapped_data.response_df.squeeze(),
+            bin_by_binding_only=bin_by_binding_only,
+            bins=bins,
+        )
 
-            model_i = stratified_cv_modeling(
-                bootstrapped_data.response_df,
-                bootstrapped_data.model_df,
-                classes=classes,
-                estimator=estimator,
-                skf=skf,
-                sample_weight=sample_weight,
-            )
-        else:
-            # this is performed on the resampled data
-            logger.info("Performing CV by index partitioning")
-            classes = stratification_classification(
-                perturbed_tf_series.loc[y_resampled.index].squeeze(),
-                y_resampled.squeeze(),
-                bin_by_binding_only=bin_by_binding_only,
-                bins=bins,
-            )
-
-            model_i = stratified_cv_modeling(
-                y_resampled,
-                x_resampled,
-                classes=classes,
-                estimator=estimator,
-                skf=skf,
-            )
+        model_i = stratified_cv_modeling(
+            bootstrapped_data.response_df,
+            bootstrapped_data.model_df,
+            classes=classes,
+            estimator=estimator,
+            skf=skf,
+            sample_weight=sample_weight,
+        )
 
         alpha_list.append(model_i.alpha_)
         bootstrap_coefs.append(model_i.coef_)
     # Convert bootstrap coefficients to DataFrame
-    bootstrap_coefs_df = pd.DataFrame(bootstrap_coefs, columns=x_resampled.columns)
+    bootstrap_coefs_df = pd.DataFrame(
+        bootstrap_coefs, columns=bootstrapped_data.model_df.columns
+    )
 
     # Compute confidence intervals
     ci_dict = {
