@@ -1123,18 +1123,6 @@ def main() -> None:
             "the bootstrap results."
         ),
     )
-    sigmoid_step3_parameters_group = sigmoid_step3_parser.add_argument_group(
-        "Parameters"
-    )
-    sigmoid_step3_parameters_group.add_argument(
-        "--top_n",
-        type=int,
-        default=600,
-        help=(
-            "Number of features to retain in the second round of modeling. "
-            "Default is 600"
-        ),
-    )
 
     sigmoid_step3_model_binning_group = sigmoid_step3_parser.add_argument_group(
         "Binning Options"
