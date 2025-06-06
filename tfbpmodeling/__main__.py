@@ -170,7 +170,7 @@ def linear_perturbation_binding_modeling(args):
         model_df=input_data.get_modeling_data(
             all_data_formula,
             add_row_max=args.row_max,
-            drop_intercept=True,
+            drop_intercept=args.drop_intercept,
             center_scale=args.center_scale,
         ),
         n_bootstraps=args.n_bootstraps,
@@ -255,7 +255,7 @@ def linear_perturbation_binding_modeling(args):
         model_df=input_data.get_modeling_data(
             topn_formula,
             add_row_max=args.row_max,
-            drop_intercept=True,
+            drop_intercept=args.drop_intercept,
             center_scale=args.center_scale,
         ),
         n_bootstraps=args.n_bootstraps,
