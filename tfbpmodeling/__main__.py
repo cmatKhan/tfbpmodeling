@@ -92,37 +92,6 @@ def linear_perturbation_binding_modeling(args):
         os.makedirs(output_subdir, exist_ok=True)
         logger.info(f"Output subdirectory created at {output_subdir}")
 
-    try:
-        all_data_bootstrap_indicies = (
-            BootstrappedModelingInputData.load_indices(args.all_data_bootstrap_indicies)
-            if args.all_data_bootstrap_indicies
-            else None
-        )
-    except FileNotFoundError:
-        logger.error(
-            f"Bootstrap indices file {args.all_data_bootstrap_indicies} not found."
-        )
-        raise
-
-    try:
-        topn_data_bootstrap_indicies = (
-            BootstrappedModelingInputData.load_indices(
-                args.topn_data_bootstrap_indicies
-            )
-            if args.topn_data_bootstrap_indicies
-            else None
-        )
-    except FileNotFoundError:
-        logger.error(
-            f"Bootstrap indices file {args.topn_data_bootstrap_indicies} not found."
-        )
-        raise
-
-    # if the bootstrap indicies are not provided, then set the number of bootstraps
-    # to the value passed in via the command line
-    all_data_n_bootstraps = None if all_data_bootstrap_indicies else args.n_bootstraps
-    topn_data_n_bootstraps = None if topn_data_bootstrap_indicies else args.n_bootstraps
-
     # instantiate a estimator
     # NOTE: fit_intercept is set to `true`. This means the intercept WILL BE fit
     # DO NOT add a constant vector to the predictors.
@@ -197,24 +166,10 @@ def linear_perturbation_binding_modeling(args):
             add_row_max=args.row_max,
             drop_intercept=args.drop_intercept,
         ),
-        n_bootstraps=all_data_n_bootstraps,
-        bootstrap_indices=all_data_bootstrap_indicies,
+        n_bootstraps=args.n_bootstraps,
+        normalize_sample_weights=args.normalize_sample_weights,
+        random_state=args.random_state,
     )
-
-    if not all_data_bootstrap_indicies:
-        all_data_indicies_output_file = os.path.join(
-            output_subdir, "all_data_bootstrap_indices.json"
-        )
-        logger.info(
-            "Saving the bootstrap indices for the all "
-            f"data model to {all_data_indicies_output_file}"
-        )
-        bootstrapped_data_all.save_indices(all_data_indicies_output_file)
-    else:
-        logger.info(
-            "Using the provided bootstrap indices for the all data model from "
-            f"{args.all_data_bootstrap_indicies}"
-        )
 
     logger.info(
         f"Running bootstrap LassoCV on all data with {args.n_bootstraps} bootstraps"
@@ -295,26 +250,12 @@ def linear_perturbation_binding_modeling(args):
         model_df=input_data.get_modeling_data(
             topn_formula, add_row_max=args.row_max, drop_intercept=args.drop_intercept
         ),
-        n_bootstraps=topn_data_n_bootstraps,
-        bootstrap_indices=topn_data_bootstrap_indicies,
+        n_bootstraps=args.n_bootstraps,
+        normalize_sample_weights=args.normalize_sample_weights,
+        random_state=(
+            args.random_state + 10 if args.random_state else args.random_state
+        ),
     )
-
-    # If the bootstrap indicies are generated from the data, save them to a json file
-    # so that they can be reused in subsequent runs
-    if not topn_data_bootstrap_indicies:
-        topn_indicies_output_file = os.path.join(
-            output_subdir, "topn_bootstrap_indices.json"
-        )
-        logger.info(
-            "Saving the bootstrap indices for the topn data "
-            f"to {topn_indicies_output_file}"
-        )
-        bootstrapped_data_top_n.save_indices(topn_indicies_output_file)
-    else:
-        logger.info(
-            "Using the provided bootstrap indices for the topn data from "
-            f"{args.topn_data_bootstrap_indicies}"
-        )
 
     logger.debug(
         f"Running bootstrap LassoCV on topn data with {args.n_bootstraps} bootstraps"
@@ -541,15 +482,12 @@ def sigmoid_bootstrap_worker(
         formula, add_row_max=args.row_max, drop_intercept=args.drop_intercept
     )
 
-    bootstrap_indices = BootstrappedModelingInputData.load_indices(
-        args.bootstrap_indices_file
-    )
     bootstrap_data = BootstrappedModelingInputData(
         response_df=input_data.response_df,
         model_df=model_df,
-        n_bootstraps=None,
-        bootstrap_indices=bootstrap_indices,
+        n_bootstraps=args.n_bootstraps,
         normalize_sample_weights=args.normalize_sample_weights,
+        random_state=args.random_state,
     )
 
     _, _, sample_weights = bootstrap_data.get_bootstrap_sample(i)
@@ -810,6 +748,28 @@ def common_modeling_input_arguments(parser: argparse._ArgumentGroup) -> None:
             "from the analysis."
         ),
     )
+    parser.add_argument(
+        "--n_bootstraps",
+        type=int,
+        default=1000,
+        help="Number of bootstrap samples to generate for resampling. Default is 1000",
+    )
+    parser.add_argument(
+        "--random_state",
+        type=int,
+        default=None,
+        help="Set this to an integer to make the bootstrap sampling reproducible. "
+        "Default is None (no fixed seed) and each call will produce different "
+        "bootstrap indices. Note that if this is set, the `top_n` random_state will "
+        "be +10 in order to make the top_n indicies different from the `all_data` step",
+    )
+    parser.add_argument(
+        "--normalize_sample_weights",
+        action="store_true",
+        help=(
+            "Set this to normalize the sample weights to sum to 1. " "Default is False."
+        ),
+    )
 
 
 def common_modeling_feature_options(parser: argparse._ArgumentGroup) -> None:
@@ -917,30 +877,6 @@ def main() -> None:
 
     common_modeling_input_arguments(linear_input_group)
 
-    linear_input_group.add_argument(
-        "--all_data_bootstrap_indicies",
-        type=str,
-        default=None,
-        help=(
-            "Path to a JSON file containing the bootstrap indices for the all data "
-            "model. If provided, these indices will be used instead of generating "
-            "new ones. If not provided, new bootstrap indices will be generated "
-            "and saved."
-        ),
-    )
-
-    linear_input_group.add_argument(
-        "--topn_data_bootstrap_indicies",
-        type=str,
-        default=None,
-        help=(
-            "Path to a JSON file containing the bootstrap indices for the topn data "
-            "model. If provided, these indices will be used instead of generating "
-            "new ones. If not provided, new bootstrap indices will be generated "
-            "and saved."
-        ),
-    )
-
     linear_model_feature_options_group = linear_lasso_parser.add_argument_group(
         "Feature Options"
     )
@@ -962,13 +898,6 @@ def main() -> None:
             "Number of features to retain in the second round of modeling. "
             "Default is 600"
         ),
-    )
-
-    linear_parameters_group.add_argument(
-        "--n_bootstraps",
-        type=int,
-        default=1000,
-        help="Number of bootstrap samples to generate for resampling. Default is 1000",
     )
 
     linear_parameters_group.add_argument(
@@ -1075,16 +1004,6 @@ def main() -> None:
     common_modeling_input_arguments(sigmoid_input_group)
 
     sigmoid_input_group.add_argument(
-        "--bootstrap_indices_file",
-        type=str,
-        required=True,
-        help=(
-            "Path to a JSON file containing the bootstrap indices for the model. "
-            "These indices will be used for resampling."
-        ),
-    )
-
-    sigmoid_input_group.add_argument(
         "--bootstrap_idx",
         type=int,
         required=True,
@@ -1139,14 +1058,6 @@ def main() -> None:
             "maxcor=10, ftol=2.22e-9, gtol=1e-5, eps=1e-8, maxfun=15000, "
             "maxiter=15000, maxls=20, finite_diff_rel_step=None. "
             'Example: \'{"maxiter": 1000, "gtol": 1e-6}\''
-        ),
-    )
-
-    sigmoid_parameters_group.add_argument(
-        "--normalize_sample_weights",
-        action="store_true",
-        help=(
-            "Set this to normalize the sample weights to sum to 1. " "Default is False."
         ),
     )
 
