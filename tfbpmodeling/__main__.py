@@ -785,6 +785,16 @@ def common_modeling_input_arguments(
         ),
     )
     parser.add_argument(
+        "--center_scale",
+        action="store_true",
+        help=(
+            "Set this to center and scale the model matrix. Note that "
+            "omitting `drop_intercept` will mean that the model matrix will be scaled "
+            "only, not centered. Set `--drop_intercept` and `--center_scale` to both "
+            "center and scale the model matrix. Default is False."
+        ),
+    )
+    parser.add_argument(
         "--top_n",
         type=int,
         default=top_n_default,
