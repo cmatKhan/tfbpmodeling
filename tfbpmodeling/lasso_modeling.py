@@ -14,6 +14,7 @@ from scipy.stats import rankdata
 from sklearn.base import BaseEstimator, clone
 from sklearn.linear_model import LassoCV, LinearRegression
 from sklearn.model_selection import StratifiedKFold
+from sklearn.preprocessing import StandardScaler
 from sklearn.utils import resample
 
 from tfbpmodeling.stratification_classification import (
@@ -387,7 +388,11 @@ class ModelingInputData:
         self._predictors_df = predictors_df_filtered
 
     def get_modeling_data(
-        self, formula: str, add_row_max: bool = False, drop_intercept: bool = False
+        self,
+        formula: str,
+        add_row_max: bool = False,
+        drop_intercept: bool = False,
+        center_scale: bool = False,
     ) -> pd.DataFrame:
         """
         Get the predictors for modeling, optionally adding a row-wise max feature.
@@ -396,8 +401,12 @@ class ModelingInputData:
         :param add_row_max: Whether to add a row-wise max feature to the predictors.
         :param drop_intercept: If `drop_intercept` is True, "-1" will be appended to
             the formula string. This will drop the intercept (constant) term from
-            the model matrix output by patsy.dmatrix. Default is `False`.
-
+            the model matrix output by patsy.dmatrix. Default is `False`. Note
+            that if this is `False`, but `center_scale` is `True`, then the
+            StandardScaler `with_mean = False` and the data is only scaled,
+            not centered.
+        :param center_scale: If True, apply sklearn StandardScaler after design matrix
+            creation.
         :return: The design matrix for modeling. self.response_df can be used for the
             response variable.
 
@@ -419,7 +428,7 @@ class ModelingInputData:
 
         # Create a design matrix using patsy
         try:
-            return dmatrix(
+            design_matrix = dmatrix(
                 formula,
                 data=predictors_df,
                 return_type="dataframe",
@@ -430,6 +439,16 @@ class ModelingInputData:
                 f"Error in creating model matrix with formula '{formula}': {exc}"
             )
             raise
+
+        if center_scale:
+            logger.info(f"Center matrix = `{drop_intercept}`). Scale matrix = `True`")
+            scaler = StandardScaler(with_mean=drop_intercept)
+            scaled_values = scaler.fit_transform(design_matrix)
+            design_matrix = pd.DataFrame(
+                scaled_values, index=design_matrix.index, columns=design_matrix.columns
+            )
+
+        return design_matrix
 
     @classmethod
     def from_files(
