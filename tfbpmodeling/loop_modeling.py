@@ -18,7 +18,7 @@ from tfbpmodeling.stratification_classification import (
     stratification_classification,
 )
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("main")
 
 
 def bootstrap_stratified_cv_loop(
@@ -109,21 +109,34 @@ def bootstrap_stratified_cv_loop(
 
         # Compute confidence intervals
         ci_dict = {
-            colname: (
-                np.percentile(bootstrap_coefs_df[colname], (100 - current_ci) / 2),
-                np.percentile(
-                    bootstrap_coefs_df[colname], 100 - (100 - current_ci) / 2
-                ),
-            )
-            for colname in bootstrap_coefs_df.columns
+            f"{current_ci}": {
+                colname: (
+                    np.percentile(bootstrap_coefs_df[colname], (100 - current_ci) / 2),
+                    np.percentile(
+                        bootstrap_coefs_df[colname], 100 - (100 - current_ci) / 2
+                    ),
+                )
+                for colname in bootstrap_coefs_df.columns
+            }
         }
 
         # Select variables within the confidence interval
         selected_variables = [
             colname
-            for colname, (lower, upper) in ci_dict.items()
+            for colname, (lower, upper) in ci_dict[f"{current_ci}"].items()
             if lower > 0 or upper < 0
         ]
+
+        if not selected_variables:
+            logger.warning(
+                f"No variables selected at CI={current_ci}. "
+                "Consider adjusting the confidence interval."
+            )
+            return BootstrapModelResults(
+                ci_dict=ci_dict,
+                bootstrap_coefs_df=bootstrap_coefs_df,
+                alpha_list=alpha_list,
+            )
 
         logger.info(f"CI={current_ci}: Selected {len(selected_variables)} variables")
         output_path = os.path.join(output_dir, f"selected_variables_ci_{i}.txt")
