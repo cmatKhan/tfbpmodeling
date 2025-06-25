@@ -87,7 +87,7 @@ def bootstrap_stratified_cv_loop(
                 perturbed_tf_series.loc[bootstrapped_data.response_df.index].squeeze(),
                 bootstrapped_data.response_df.squeeze(),
                 bin_by_binding_only=kwargs.get("bin_by_binding_only", False),
-                bins=kwargs.get("bins", None),
+                bins=kwargs.get("bins", [0, 8, 64, 512, np.inf]),
             )
 
             model_i = stratified_cv_modeling(
