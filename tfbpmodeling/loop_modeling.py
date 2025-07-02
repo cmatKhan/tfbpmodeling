@@ -61,6 +61,7 @@ def bootstrap_stratified_cv_loop(
     # for variability in how each bootstrap sample is partitioned into train/test
     skf = StratifiedKFold(n_splits=4, shuffle=True, random_state=42)
     logger.info(f"Starting iterative variable dropping with CI={current_ci}")
+
     i = 0
     while True:
         # Perform bootstrapped modeling at the current CI
@@ -85,8 +86,6 @@ def bootstrap_stratified_cv_loop(
 
             classes = stratification_classification(
                 perturbed_tf_series.loc[bootstrapped_data.response_df.index].squeeze(),
-                bootstrapped_data.response_df.squeeze(),
-                bin_by_binding_only=kwargs.get("bin_by_binding_only", False),
                 bins=kwargs.get("bins", [0, 8, 64, 512, np.inf]),
             )
 
