@@ -69,10 +69,6 @@ def linear_perturbation_binding_modeling(args):
         logger.info(f"Output subdirectory created at {output_subdir}")
 
     # instantiate a estimator
-    # `fit_intercept` is set opposite of `scale_by_std`. If `scale_by_std` is `False`,
-    # the default, then `fit_intercept` is set to True and the estimator will fit the
-    # intercept. If `scale_by_std` is True, then the estimator will not fit the
-    # intercept, meaning it assumes the data is centered.
     estimator = LassoCV(
         fit_intercept=True,
         selection="random",
@@ -470,9 +466,11 @@ def common_modeling_input_arguments(
         "--scale_by_std",
         action="store_true",
         help=(
-            "Set this to center and scale the model matrix. Note that setting this "
-            "will set the `fit_intercept` parameter of the LassoCV estimator to "
-            "False."
+            "Set this to scale the model matrix by standard deviation"
+            "(without centering). The data is scaled using"
+            "StandardScaler(with_mean=False, with_std=True). The estimator will"
+            "still fit an intercept (fit_intercept=True) since the "
+            "data is not centered."
         ),
     )
     parser.add_argument(

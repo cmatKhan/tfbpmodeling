@@ -97,7 +97,7 @@ This command executes a sequential 4-stage workflow:
 #### Data Processing
 
 - `--normalize_sample_weights`: Normalize bootstrap weights to sum to 1
-- `--scale_by_std`: Center and scale model matrix
+- `--scale_by_std`: Scale model matrix by standard deviation (without centering)
 - `--bins`: Bin edges for data stratification (default: "0,8,12,np.inf")
 
 #### Output Control

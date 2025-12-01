@@ -385,12 +385,11 @@ class ModelingInputData:
         :param add_row_max: Whether to add a row-wise max feature to the predictors.
         :param drop_intercept: If `drop_intercept` is True, "-1" will be appended to
             the formula string. This will drop the intercept (constant) term from
-            the model matrix output by patsy.dmatrix. Default is `False`. Note
-            that if this is `False`, but `scale_by_std` is `True`, then the
-            StandardScaler `with_mean = False` and the data is only scaled,
-            not centered.
-        :param scale_by_std: If True, apply sklearn StandardScaler after design matrix
-            creation.
+            the model matrix output by patsy.dmatrix. Default is `False`.
+        :param scale_by_std: If True, scale the design matrix by standard deviation
+            using StandardScaler(with_mean=False, with_std=True). The data is NOT
+            centered, so the estimator should still fit an intercept
+            (fit_intercept=True).
         :return: The design matrix for modeling. self.response_df can be used for the
             response variable.
 
