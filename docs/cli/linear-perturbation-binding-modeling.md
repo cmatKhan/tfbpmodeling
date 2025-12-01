@@ -111,10 +111,11 @@ Normalize bootstrap sample weights to sum to 1.
 - **Use case**: When sample weights need explicit normalization
 
 #### `--scale_by_std`
-Center and scale the model matrix by standard deviation.
+Scale the model matrix by standard deviation (without centering).
 - **Default**: False
-- **Effect**: Sets LassoCV `fit_intercept` parameter to False
-- **Use case**: When features have very different scales
+- **Implementation**: Uses `StandardScaler(with_mean=False, with_std=True)`
+- **Effect**: Data is scaled but not centered; estimator still fits intercept (`fit_intercept=True`)
+- **Use case**: When features have very different scales but you want to preserve the mean structure
 
 ### Feature Engineering
 

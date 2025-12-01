@@ -20,7 +20,13 @@ class DummyResults:
 
 class DummyBoot:
     def __init__(self, *args, **kwargs):
-        pass
+        # Add response_df attribute with a simple index for stratification
+        self.response_df = pd.DataFrame(
+            {"response": [1.0, 2.0, 3.0]}, index=["gene1", "gene2", "gene3"]
+        )
+        self.model_df = pd.DataFrame(
+            {"TF1:geneA": [0.1, 0.2, 0.3]}, index=["gene1", "gene2", "gene3"]
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -39,18 +45,15 @@ def stub_all(monkeypatch, tmp_path):
     # 2. Stub ModelingInputData.from_files
     class FakeInput:
         def __init__(self):
-            self.response_df = pd.DataFrame(
-                {
-                    "feature": ["TF1", "TF1", "TF1"],
-                    "TF1": [1, 2, 3],
-                }
-            )
+            # Use consistent index across all dataframes
+            idx = ["gene1", "gene2", "gene3"]
+            self.response_df = pd.DataFrame({"TF1": [1, 2, 3]}, index=idx)
             self.predictors_df = pd.DataFrame(
                 {
-                    "feature": ["TF1", "geneA", "geneA"],
                     "TF1": [1, 2, 3],
                     "geneA": [3, 2, 1],
-                }
+                },
+                index=idx,
             )
             self.perturbed_tf = "TF1"
             self.top_n_masked = False
@@ -84,6 +87,25 @@ def stub_all(monkeypatch, tmp_path):
         "stratification_classification",
         lambda *args, **kwargs: [0] * len(args[0]),
     )
+
+    # 5. Stub stratified_cv_modeling (returns a dummy fitted model)
+    class DummyModel:
+        coef_ = [0.1, 0.2]
+        intercept_ = 0.5
+        alpha_ = 0.01
+
+    monkeypatch.setattr(iface, "stratified_cv_modeling", lambda *a, **k: DummyModel())
+
+    # 6. Stub joblib.dump (validate it receives a dict with model and metadata)
+    def fake_dump(obj, filepath):
+        # Validate the structure if it's the model bundle
+        if isinstance(obj, dict) and "model" in obj:
+            assert "feature_names" in obj
+            assert "formula" in obj
+            assert "perturbed_tf" in obj
+
+    monkeypatch.setattr(iface.joblib, "dump", fake_dump)
+
     yield
 
 
@@ -132,5 +154,7 @@ def test_linear_workflow_logs(caplog, tmp_path):
     assert "Step 1: Preprocessing" in log
     assert "Output directory created at" in log
     assert "Step 2: Bootstrap LassoCV on all data" in log
-    assert "Step 3: Running LassoCV on topn data" in log
-    assert "Step 4: Test the significance of the interactor terms" in log
+    assert "Step 3: Bootstrap LassoCV on the significant coefficients" in log
+    assert "Saving the best all data model to" in log
+    assert "Step 4: Running LassoCV on topn data" in log
+    assert "Step 5: Test the significance of the interactor terms" in log

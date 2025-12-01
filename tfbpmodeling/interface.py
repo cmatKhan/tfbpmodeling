@@ -3,8 +3,10 @@ import json
 import logging
 import os
 
+import joblib
 import numpy as np
 from sklearn.linear_model import LassoCV
+from sklearn.model_selection import StratifiedKFold
 
 from tfbpmodeling.bootstrap_stratified_cv import bootstrap_stratified_cv_modeling
 from tfbpmodeling.bootstrap_stratified_cv_loop import bootstrap_stratified_cv_loop
@@ -17,6 +19,7 @@ from tfbpmodeling.evaluate_interactor_significance_linear import (
 )
 from tfbpmodeling.modeling_input_data import ModelingInputData
 from tfbpmodeling.stratification_classification import stratification_classification
+from tfbpmodeling.stratified_cv import stratified_cv_modeling
 from tfbpmodeling.utils.exclude_predictor_variables import exclude_predictor_variables
 
 logger = logging.getLogger("main")
@@ -69,10 +72,6 @@ def linear_perturbation_binding_modeling(args):
         logger.info(f"Output subdirectory created at {output_subdir}")
 
     # instantiate a estimator
-    # `fit_intercept` is set opposite of `scale_by_std`. If `scale_by_std` is `False`,
-    # the default, then `fit_intercept` is set to True and the estimator will fit the
-    # intercept. If `scale_by_std` is True, then the estimator will not fit the
-    # intercept, meaning it assumes the data is centered.
     estimator = LassoCV(
         fit_intercept=True,
         selection="random",
@@ -217,15 +216,55 @@ def linear_perturbation_binding_modeling(args):
     ) as f:
         json.dump(all_data_sig_coefs, f, indent=4)
 
+    # extract the significant coefficients and create a formula.
+    all_data_sig_coefs_formula = f"{' + '.join(all_data_sig_coefs.keys())}"
+    logger.debug(f"`all_data_sig_coefs_formula` formula: {all_data_sig_coefs_formula}")
+
     logger.info(
-        "Step 3: Running LassoCV on topn data with significant coefficients "
-        "from the all data model"
+        "Step 3: Bootstrap LassoCV on the significant coefficients "
+        "from the all data model. This produces the best model for all data"
     )
 
-    # Create the formula for the topn modeling from the significant coefficients
-    # NOTE: to remove the intercept, we need to add " -1 "
-    topn_formula = f"{' + '.join(all_data_sig_coefs.keys())}"
-    logger.debug(f"Topn formula: {topn_formula}")
+    skf = StratifiedKFold(n_splits=4, shuffle=True, random_state=42)
+    classes = stratification_classification(
+        input_data.predictors_df[input_data.perturbed_tf].squeeze(),
+        bins=args.bins,
+    )
+
+    best_all_data_model_df = input_data.get_modeling_data(
+        all_data_sig_coefs_formula,
+        add_row_max=args.row_max,
+        drop_intercept=True,
+        scale_by_std=args.scale_by_std,
+    )
+    best_all_data_model = stratified_cv_modeling(
+        input_data.response_df,
+        best_all_data_model_df,
+        classes=classes,
+        estimator=estimator,
+        skf=skf,
+        sample_weight=None,
+    )
+
+    # save the best all data model to file with metadata
+    best_model_file = os.path.join(output_subdir, "best_all_data_model.pkl")
+    logger.info(f"Saving the best all data model to {best_model_file}")
+
+    # Bundle model with metadata so feature names are preserved
+    model_bundle = {
+        "model": best_all_data_model,
+        "feature_names": list(best_all_data_model_df.columns),
+        "formula": all_data_sig_coefs_formula,
+        "perturbed_tf": input_data.perturbed_tf,
+        "scale_by_std": args.scale_by_std,
+        "drop_intercept": True,
+    }
+    joblib.dump(model_bundle, best_model_file)
+
+    logger.info(
+        "Step 4: Running LassoCV on topn data with significant coefficients "
+        "from the all data model"
+    )
 
     # apply the top_n masking
     input_data.top_n_masked = True
@@ -234,7 +273,7 @@ def linear_perturbation_binding_modeling(args):
     bootstrapped_data_top_n = BootstrappedModelingInputData(
         response_df=input_data.response_df,
         model_df=input_data.get_modeling_data(
-            topn_formula,
+            all_data_sig_coefs_formula,
             add_row_max=args.row_max,
             drop_intercept=True,
             scale_by_std=args.scale_by_std,
@@ -287,8 +326,8 @@ def linear_perturbation_binding_modeling(args):
         json.dump(topn_output_res, f, indent=4)
 
     logger.info(
-        "Step 4: Test the significance of the interactor terms that survive "
-        "against the corresoponding main effect"
+        "Step 5: Test the significance of the interactor terms that survive "
+        "against the corresponding main effect"
     )
 
     if args.stage4_topn:
@@ -470,9 +509,11 @@ def common_modeling_input_arguments(
         "--scale_by_std",
         action="store_true",
         help=(
-            "Set this to center and scale the model matrix. Note that setting this "
-            "will set the `fit_intercept` parameter of the LassoCV estimator to "
-            "False."
+            "Set this to scale the model matrix by standard deviation"
+            "(without centering). The data is scaled using"
+            "StandardScaler(with_mean=False, with_std=True). The estimator will"
+            "still fit an intercept (fit_intercept=True) since the "
+            "data is not centered."
         ),
     )
     parser.add_argument(
