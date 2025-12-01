@@ -175,19 +175,6 @@ def main() -> None:
         help="If set, perform Stage 4 evaluation on top-n data instead of all data.",
     )
 
-    parameters_group.add_argument(
-        "--iterative_dropout",
-        action="store_true",
-        help="Enable iterative variable dropout based on confidence intervals.",
-    )
-
-    parameters_group.add_argument(
-        "--stabilization_ci_start",
-        type=float,
-        default=50.0,
-        help="Starting confidence interval for iterative dropout stabilization",
-    )
-
     # Output arguments
     linear_output_group = linear_lasso_parser.add_argument_group("Output")
 
